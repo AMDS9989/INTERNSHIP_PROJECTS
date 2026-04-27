@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SHAHID AI Smart Surveillance</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: Arial;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #38bdf8;
+        }
+
+        /* Container with reduced HEIGHT only */
+        #container {
+            width: 720px;
+            height: 400px;   /* reduced height */
+            overflow: hidden;
+            position: relative;
+            border: 3px solid #38bdf8;
+            border-radius: 10px;
+        }
+
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+
+            /* shift up to center crop */
+            transform: translateY(-70px);
+        }
+
+        #status {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>SHAHID AI Smart Surveillance System</h1>
+
+<div id="container">
+    <!-- KEEP ORIGINAL QUALITY -->
+    <video id="video" width="720" height="540" autoplay muted></video>
+    <canvas id="canvas" width="720" height="540"></canvas>
+</div>
+
+<h3 id="status">Loading...</h3>
+<h3 id="count">People Count: 0</h3>
+
+<audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusText = document.getElementById("status");
+const countText = document.getElementById("count");
+const alarm = document.getElementById("alarm");
+
+let model;
+let startTime = null;
+let alertSent = false;
+
+// Telegram Alert (FIX TOKEN!)
+function sendAlert() {
+    const token = "YOUR_BOT_TOKEN";
+    const chat_id = "YOUR_CHAT_ID";
+
+    fetch(`https://api.telegram.org/bot${token}/sendMessage?chat_id=${chat_id}&text=SHAHID Suspicious Activity Detected`);
+}
+
+// Screenshot (video + boxes)
+function capture() {
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+
+    tempCtx.drawImage(video, 0, 0);
+    tempCtx.drawImage(canvas, 0, 0);
+
+    const link = document.createElement("a");
+    link.download = "alert.png";
+    link.href = tempCanvas.toDataURL();
+    link.click();
+}
+
+// Camera
+async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+}
+
+// Load model
+async function loadModel() {
+    model = await cocoSsd.load();
+    statusText.innerText = "System Ready";
+}
+
+// Detection
+async function detect() {
+    const predictions = await model.detect(video);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    let personDetected = false;
+    let count = 0;
+
+    predictions.forEach(p => {
+        const [x, y, w, h] = p.bbox;
+
+        if (p.class === "person") {
+            personDetected = true;
+            count++;
+
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, w, h);
+
+            ctx.fillStyle = "red";
+            ctx.fillText("Person", x, y - 5);
+        }
+    });
+
+    countText.innerText = "People Count: " + count;
+
+    if (personDetected) {
+        if (!startTime) startTime = Date.now();
+
+        let time = (Date.now() - startTime) / 1000;
+
+        if (time > 10) {
+            statusText.innerText = "Suspicious Activity Detected";
+            statusText.style.color = "red";
+
+            if (!alertSent) {
+                alarm.play();
+                sendAlert();
+                capture();
+                alertSent = true;
+            }
+
+        } else {
+            statusText.innerText = "Monitoring...";
+            statusText.style.color = "yellow";
+        }
+
+    } else {
+        startTime = null;
+        alertSent = false;
+        statusText.innerText = "No Person";
+        statusText.style.color = "white";
+    }
+
+    requestAnimationFrame(detect);
+}
+
+// Main
+async function main() {
+    await startCamera();
+    await loadModel();
+    detect();
+}
+
+main();
+</script>
+
+</body>
+</html>
